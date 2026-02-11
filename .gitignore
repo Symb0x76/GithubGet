@@ -1,6 +1,7 @@
 # Build
 bin/
 obj/
+artifacts/
 
 # VS
 .vs/
@@ -17,6 +18,9 @@ obj/
 # Rider
 .idea/
 
-# OS generated files
+# OS generated
 .DS_Store
 *.lnk
+
+# Release
+*.zip

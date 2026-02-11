@@ -8,4 +8,6 @@ public sealed record RepoSearchListItem
     public string? Description { get; init; }
     public string? LatestReleaseTag { get; init; }
     public string? Url { get; init; }
+    public bool IsSelected { get; set; }
+    public string SourceText => "GitHub Release";
 }

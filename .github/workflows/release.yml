@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish packages
+        shell: pwsh
+        run: .github/scripts/publish-release.ps1
+
+      - name: Install packaging tools
+        shell: pwsh
+        run: |
+          choco install wixtoolset --no-progress -y
+          choco install nsis --no-progress -y
+
+      - name: Build MSI and EXE installers
+        shell: pwsh
+        run: .github/scripts/build-installers.ps1
+
+      - name: Generate categorized release notes
+        shell: pwsh
+        run: .github/scripts/generate-release-notes.ps1 -OutputPath artifacts/release/release-notes.md
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: githubget-release-packages
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/*.msi
+            artifacts/release/*.exe
+            artifacts/release/INSTALLERS.md
+            artifacts/release/release-notes.md
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: artifacts/release/release-notes.md
+          files: |
+            artifacts/release/*.zip
+            artifacts/release/*.msi
+            artifacts/release/*.exe
+            artifacts/release/INSTALLERS.md

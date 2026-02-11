@@ -33,6 +33,13 @@ public partial class SubscriptionsViewModel : BaseViewModel
         OwnerOrRepo
     }
 
+    private enum RepoSearchMode
+    {
+        Owner,
+        Repo,
+        OwnerOrRepo
+    }
+
     private enum UpdateViewMode
     {
         Detailed,
@@ -56,6 +63,11 @@ public partial class SubscriptionsViewModel : BaseViewModel
     private bool _isRepoSearchRunning;
     private bool _hasRepoSearchRequested;
     private string _repoSearchInput = string.Empty;
+    private bool _isRepoRealtimeSearchInput = true;
+    private bool _isRepoCaseSensitiveSearchInput;
+    private bool _isRepoIgnoreSpecialCharsSearchInput = true;
+    private RepoSearchMode _repoSearchMode = RepoSearchMode.OwnerOrRepo;
+    private List<RepoSearchListItem> _repoSearchAllResults = new();
     private ObservableCollection<RepoSearchListItem> _repoSearchResults = new();
     private string _statusMessage = string.Empty;
     private ObservableCollection<Subscription> _subscriptions = new();
@@ -157,7 +169,95 @@ public partial class SubscriptionsViewModel : BaseViewModel
     public string RepoSearchInput
     {
         get => _repoSearchInput;
-        set => SetProperty(ref _repoSearchInput, value);
+        set
+        {
+            if (!SetProperty(ref _repoSearchInput, value))
+            {
+                return;
+            }
+
+            if (IsRepoRealtimeSearchInput)
+            {
+                ApplyRepoSearchResultView();
+            }
+        }
+    }
+
+    public bool IsRepoRealtimeSearchInput
+    {
+        get => _isRepoRealtimeSearchInput;
+        set
+        {
+            if (!SetProperty(ref _isRepoRealtimeSearchInput, value))
+            {
+                return;
+            }
+
+            if (value)
+            {
+                ApplyRepoSearchResultView();
+            }
+        }
+    }
+
+    public bool IsRepoCaseSensitiveSearchInput
+    {
+        get => _isRepoCaseSensitiveSearchInput;
+        set
+        {
+            if (SetProperty(ref _isRepoCaseSensitiveSearchInput, value))
+            {
+                ApplyRepoSearchResultView();
+            }
+        }
+    }
+
+    public bool IsRepoIgnoreSpecialCharsSearchInput
+    {
+        get => _isRepoIgnoreSpecialCharsSearchInput;
+        set
+        {
+            if (SetProperty(ref _isRepoIgnoreSpecialCharsSearchInput, value))
+            {
+                ApplyRepoSearchResultView();
+            }
+        }
+    }
+
+    public bool RepoSearchModeOwnerInput
+    {
+        get => _repoSearchMode == RepoSearchMode.Owner;
+        set
+        {
+            if (value)
+            {
+                SetRepoSearchMode(RepoSearchMode.Owner);
+            }
+        }
+    }
+
+    public bool RepoSearchModeRepoInput
+    {
+        get => _repoSearchMode == RepoSearchMode.Repo;
+        set
+        {
+            if (value)
+            {
+                SetRepoSearchMode(RepoSearchMode.Repo);
+            }
+        }
+    }
+
+    public bool RepoSearchModeOwnerOrRepoInput
+    {
+        get => _repoSearchMode == RepoSearchMode.OwnerOrRepo;
+        set
+        {
+            if (value)
+            {
+                SetRepoSearchMode(RepoSearchMode.OwnerOrRepo);
+            }
+        }
     }
 
     public ObservableCollection<RepoSearchListItem> RepoSearchResults
@@ -836,6 +936,7 @@ public partial class SubscriptionsViewModel : BaseViewModel
 
             if (repositories.Count == 0)
             {
+                _repoSearchAllResults.Clear();
                 RepoSearchResults = new ObservableCollection<RepoSearchListItem>();
                 StatusMessage = $"未找到匹配仓库。{BuildPatHint(hasToken)}";
                 return;
@@ -894,24 +995,28 @@ public partial class SubscriptionsViewModel : BaseViewModel
 
             if (rateLimitException is not null)
             {
+                _repoSearchAllResults.Clear();
                 RepoSearchResults = new ObservableCollection<RepoSearchListItem>();
                 StatusMessage = BuildRateLimitStatusMessage(rateLimitException.HasToken, rateLimitException.ResetAtUtc);
                 return;
             }
 
-            RepoSearchResults = new ObservableCollection<RepoSearchListItem>(filtered);
-            StatusMessage = filtered.Count == 0
+            _repoSearchAllResults = filtered;
+            ApplyRepoSearchResultView();
+            StatusMessage = RepoSearchResults.Count == 0
                 ? "未找到可添加软件包的仓库（已过滤无 Release 的仓库）。"
-                : $"找到 {filtered.Count} 个可添加软件包的仓库（已过滤无 Release）。";
+                : $"找到 {RepoSearchResults.Count} 个可添加软件包的仓库（已过滤无 Release）。";
             StatusMessage = $"{StatusMessage}{BuildPatHint(hasToken)}";
         }
         catch (GitHubApiRateLimitException ex)
         {
+            _repoSearchAllResults.Clear();
             RepoSearchResults = new ObservableCollection<RepoSearchListItem>();
             StatusMessage = BuildRateLimitStatusMessage(ex.HasToken, ex.ResetAtUtc);
         }
         catch (Exception ex)
         {
+            _repoSearchAllResults.Clear();
             StatusMessage = $"搜索仓库失败: {ex.Message}";
         }
         finally
@@ -939,6 +1044,19 @@ public partial class SubscriptionsViewModel : BaseViewModel
     }
 
     [RelayCommand]
+    private void ApplySelectedRepoFromSearch()
+    {
+        var selected = GetFirstSelectedRepoSearchItem();
+        if (selected is null)
+        {
+            StatusMessage = "请先勾选要载入的仓库。";
+            return;
+        }
+
+        ApplyRepoFromSearch(selected);
+    }
+
+    [RelayCommand]
     private void OpenRepoPage(RepoSearchListItem? item)
     {
         if (item is null || string.IsNullOrWhiteSpace(item.Url))
@@ -958,6 +1076,35 @@ public partial class SubscriptionsViewModel : BaseViewModel
         {
             StatusMessage = $"打开仓库页面失败: {ex.Message}";
         }
+    }
+
+    [RelayCommand]
+    private void OpenSelectedRepoPage()
+    {
+        var selected = GetFirstSelectedRepoSearchItem();
+        if (selected is null)
+        {
+            StatusMessage = "请先勾选要打开的仓库。";
+            return;
+        }
+
+        OpenRepoPage(selected);
+    }
+
+    [RelayCommand]
+    private void ClearRepoSearchSelection()
+    {
+        if (RepoSearchResults.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var item in RepoSearchResults)
+        {
+            item.IsSelected = false;
+        }
+
+        RepoSearchResults = new ObservableCollection<RepoSearchListItem>(RepoSearchResults);
     }
 
     [RelayCommand]
@@ -1771,6 +1918,92 @@ public partial class SubscriptionsViewModel : BaseViewModel
         OnPropertyChanged(nameof(UpdateDetailedViewVisibility));
         OnPropertyChanged(nameof(UpdateCompactViewVisibility));
         OnPropertyChanged(nameof(UpdateCardViewVisibility));
+    }
+
+    private void SetRepoSearchMode(RepoSearchMode mode)
+    {
+        if (_repoSearchMode == mode)
+        {
+            return;
+        }
+
+        _repoSearchMode = mode;
+        OnPropertyChanged(nameof(RepoSearchModeOwnerInput));
+        OnPropertyChanged(nameof(RepoSearchModeRepoInput));
+        OnPropertyChanged(nameof(RepoSearchModeOwnerOrRepoInput));
+        ApplyRepoSearchResultView();
+    }
+
+    private RepoSearchListItem? GetFirstSelectedRepoSearchItem()
+    {
+        return RepoSearchResults.FirstOrDefault(item => item.IsSelected);
+    }
+
+    private void ApplyRepoSearchResultView()
+    {
+        var keyword = RepoSearchInput.Trim();
+        var filtered = _repoSearchAllResults
+            .Where(item => MatchesRepoSearch(item, keyword))
+            .OrderBy(item => item.FullName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        RepoSearchResults = new ObservableCollection<RepoSearchListItem>(filtered);
+    }
+
+    private bool MatchesRepoSearch(RepoSearchListItem item, string keyword)
+    {
+        var normalizedKeyword = NormalizeRepoSearchValue(keyword);
+        if (string.IsNullOrWhiteSpace(normalizedKeyword))
+        {
+            return true;
+        }
+
+        var comparison = IsRepoCaseSensitiveSearchInput ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        foreach (var candidate in GetRepoSearchCandidates(item))
+        {
+            var normalizedCandidate = NormalizeRepoSearchValue(candidate);
+            if (string.IsNullOrWhiteSpace(normalizedCandidate))
+            {
+                continue;
+            }
+
+            if (normalizedCandidate.Contains(normalizedKeyword, comparison))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private IEnumerable<string> GetRepoSearchCandidates(RepoSearchListItem item)
+    {
+        return _repoSearchMode switch
+        {
+            RepoSearchMode.Owner => new[] { item.Owner },
+            RepoSearchMode.Repo => new[] { item.Repo },
+            RepoSearchMode.OwnerOrRepo => new[] { item.Owner, item.Repo },
+            _ => new[] { item.Owner, item.Repo }
+        };
+    }
+
+    private string NormalizeRepoSearchValue(string value)
+    {
+        var trimmed = value.Trim();
+        if (!IsRepoIgnoreSpecialCharsSearchInput)
+        {
+            return trimmed;
+        }
+
+        var builder = new StringBuilder(trimmed.Length);
+        foreach (var character in trimmed)
+        {
+            if (char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
+            {
+                builder.Append(character);
+            }
+        }
+
+        return builder.ToString();
     }
 
     private bool MatchesInstalledSearch(Subscription subscription, string keyword)
