@@ -1,0 +1,22 @@
+# Build
+bin/
+obj/
+
+# VS
+.vs/
+*.user
+*.suo
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# NuGet
+*.nupkg
+
+# Rider
+.idea/
+
+# OS generated files
+.DS_Store
+*.lnk

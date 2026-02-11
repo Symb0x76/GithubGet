@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GithubGet.App/GithubGet.App.csproj" />
+    <Project Path="src/GithubGet.Core/GithubGet.Core.csproj" />
+    <Project Path="src/GithubGet.Worker/GithubGet.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GithubGet.Core.Tests/GithubGet.Core.Tests.csproj" />
+  </Folder>
+</Solution>
